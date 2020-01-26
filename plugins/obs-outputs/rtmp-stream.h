@@ -87,6 +87,7 @@ struct rtmp_stream {
 	int64_t pframe_drop_threshold_usec;
 	int min_priority;
 	float congestion;
+	uint64_t latency_estimate_usec;
 
 	int64_t last_dts_usec;
 

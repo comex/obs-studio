@@ -68,6 +68,7 @@ struct obs_output_info {
 
 	float (*get_congestion)(void *data);
 	int (*get_connect_time_ms)(void *data);
+    void (*get_latency_estimate_ns)(void *data, int64_t *local_latency, int64_t *network_latency);
 
 	/* only used with encoded outputs, separated with semicolon */
 	const char *encoded_video_codecs;

@@ -166,11 +166,17 @@ void OBSBasicStatusBar::UpdateLatency()
 		return;
 
 	obs_encoder_t *encoder = obs_output_get_video_encoder(streamOutput);
-	uint64_t estimateNS = obs_encoder_get_latency_estimate_ns(encoder);
-	double estimateMS = double(estimateNS) / 1000000.0;
+	uint64_t encoderLatencyNS = obs_encoder_get_latency_estimate_ns(encoder);
+	double encoderLatencyMS = double(encoderLatencyNS) / 1000000.0;
 
-	QString text = QString("encode latency: ") + QString::number(estimateMS, 'f', 1) +
+	int64_t outputLatencyNS = -1, networkLatencyNS = -1;
+	obs_output_get_latency_estimate_ns(streamOutput, &outputLatencyNS, &networkLatencyNS);
+	double outputLatencyMS = double(outputLatencyNS) / 1000000.0;
+
+	QString text = QString("latency: ") + QString::number(encoderLatencyMS, 'f', 1) +
 		QString("ms");
+	text += QString(" + ") + QString::number(outputLatencyMS, 'f', 1) + "ms";
+	// todo: tooltip etc.
 
 	latency->setText(text);
 	latency->setMinimumWidth(latency->width());

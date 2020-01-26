@@ -1344,6 +1344,8 @@ static void check_to_drop_frames(struct rtmp_stream *stream, bool pframes)
 	 * sent is higher than threshold, drop frames */
 	buffer_duration_usec = stream->last_dts_usec - first.dts_usec;
 
+	stream->latency_estimate_usec = buffer_duration_usec;
+
 	if (!pframes) {
 		stream->congestion =
 			(float)buffer_duration_usec / (float)drop_threshold;
@@ -1516,6 +1518,14 @@ static int rtmp_stream_connect_time(void *data)
 	return stream->rtmp.connect_time_ms;
 }
 
+static void rtmp_stream_latency_estimate_ns(void *data, int64_t *local_latency, int64_t *network_latency)
+{
+	struct rtmp_stream *stream = data;
+
+	*local_latency = (uint64_t)stream->latency_estimate_usec * 1000;
+	*network_latency = 42;
+}
+
 struct obs_output_info rtmp_output_info = {
 	.id = "rtmp_output",
 	.flags = OBS_OUTPUT_AV | OBS_OUTPUT_ENCODED | OBS_OUTPUT_SERVICE |
@@ -1533,5 +1543,6 @@ struct obs_output_info rtmp_output_info = {
 	.get_total_bytes = rtmp_stream_total_bytes_sent,
 	.get_congestion = rtmp_stream_congestion,
 	.get_connect_time_ms = rtmp_stream_connect_time,
+	.get_latency_estimate_ns = rtmp_stream_latency_estimate_ns,
 	.get_dropped_frames = rtmp_stream_dropped_frames,
 };

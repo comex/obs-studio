@@ -1262,6 +1262,7 @@ int
 RTMP_ClientPacket(RTMP *r, RTMPPacket *packet)
 {
     int bHasMediaPacket = 0;
+    printf("packetType=%d\n", packet->m_packetType);
     switch (packet->m_packetType)
     {
     case RTMP_PACKET_TYPE_CHUNK_SIZE:

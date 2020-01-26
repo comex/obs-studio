@@ -2540,6 +2540,15 @@ int obs_output_get_connect_time_ms(obs_output_t *output)
 	return -1;
 }
 
+void obs_output_get_latency_estimate_ns(obs_output_t *output, int64_t *local_latency, int64_t *network_latency)
+{
+	if (!obs_output_valid(output, "obs_output_get_latency_estimate_ns"))
+		return;
+
+	if (output->info.get_latency_estimate_ns)
+		output->info.get_latency_estimate_ns(output->context.data, local_latency, network_latency);
+}
+
 const char *obs_output_get_last_error(obs_output_t *output)
 {
 	if (!obs_output_valid(output, "obs_output_get_last_error"))

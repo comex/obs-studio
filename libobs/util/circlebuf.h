@@ -320,7 +320,7 @@ static inline void *circlebuf_data(struct circlebuf *cb, size_t idx,
 
 	/* caller must ensure the requested data is stored contiguously */
 	assert(cb->capacity - offset >= size);
-	(void)size;
+	UNUSED_PARAMETER(size); /* if NDEBUG */
 
 	return ptr + offset;
 }

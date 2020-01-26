@@ -93,6 +93,7 @@ struct ftl_stream {
 	int64_t pframe_drop_threshold_usec;
 	int min_priority;
 	float congestion;
+	uint64_t latency_estimate_usec;
 
 	int64_t last_dts_usec;
 
@@ -760,6 +761,8 @@ static void check_to_drop_frames(struct ftl_stream *stream, bool pframes)
 	 * sent is higher than threshold, drop frames */
 	buffer_duration_usec = stream->last_dts_usec - first.dts_usec;
 
+	stream->latency_estimate_usec = buffer_duration_usec;
+
 	if (!pframes) {
 		stream->congestion =
 			(float)buffer_duration_usec / (float)drop_threshold;
@@ -862,6 +865,13 @@ static float ftl_stream_congestion(void *data)
 {
 	struct ftl_stream *stream = data;
 	return stream->min_priority > 0 ? 1.0f : stream->congestion;
+}
+
+static void ftl_stream_latency_estimate_ns(void *data, int64_t *local_latency, int64_t *network_latency)
+{
+	struct ftl_stream *stream = data;
+	*local_latency = (int64_t)stream->latency_estimate_usec * 1000;
+	*network_latency = -1;
 }
 
 enum ret_type {
@@ -1160,5 +1170,6 @@ struct obs_output_info ftl_output_info = {
 	.get_properties = ftl_stream_properties,
 	.get_total_bytes = ftl_stream_total_bytes_sent,
 	.get_congestion = ftl_stream_congestion,
+	.get_latency_estimate_ns = ftl_stream_latency_estimate_ns,
 	.get_dropped_frames = ftl_stream_dropped_frames,
 };

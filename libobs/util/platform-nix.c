@@ -27,6 +27,7 @@
 #include <glob.h>
 #include <time.h>
 #include <signal.h>
+#include <netinet/tcp.h>
 
 #include "obsconfig.h"
 
@@ -933,3 +934,12 @@ uint64_t os_get_free_disk_space(const char *dir)
 
 	return (uint64_t)info.f_frsize * (uint64_t)info.f_bavail;
 }
+
+#if defined(TCP_INFO) /* Linux */
+	typedef struct tcp_info some_tcp_info_t;
+	#define SOME_TCP_INFO TCP_INFO
+#elif defined(TCP_CONNECTION_INFO) /* macOS */
+	typedef struct tcp_connection_info some_tcp_info_t;
+	#define SOME_TCP_INFO TCP_CONNECTION_INFO
+#endif
+

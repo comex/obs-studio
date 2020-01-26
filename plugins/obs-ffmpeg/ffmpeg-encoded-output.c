@@ -428,6 +428,8 @@ static void check_to_drop_frames(struct ffmpeg_encoded_output *stream,
 	 * sent is higher than threshold, drop frames */
 	buffer_duration_usec = stream->last_dts_usec - first.dts_usec;
 
+	stream->latency_estimate_usec = buffer_duration_usec;
+
 	if (!pframes) {
 		stream->congestion =
 			(float)buffer_duration_usec / (float)drop_threshold;
@@ -853,6 +855,14 @@ static int ffmpeg_encoded_output_connect_time(void *data)
 	return proto_connect_time(stream);
 }
 
+static void ffmpeg_encoded_output_latency_estimate_ns(void *data, int64_t *local_latency, int64_t *network_latency)
+{
+	struct ffmpeg_encoded_output *stream = data;
+
+	*local_latency = (int64_t)stream->latency_estimate_usec * 1000;
+	*network_latency = -1;
+}
+
 struct obs_output_info ffmpeg_encoded_output_info = {
 	.id = "ffmpeg_encoded_output",
 	.flags = OBS_OUTPUT_AV | OBS_OUTPUT_ENCODED | OBS_OUTPUT_SERVICE |
@@ -870,4 +880,5 @@ struct obs_output_info ffmpeg_encoded_output_info = {
 	.get_total_bytes = ffmpeg_encoded_output_total_bytes_sent,
 	.get_congestion = ffmpeg_encoded_output_congestion,
 	.get_connect_time_ms = ffmpeg_encoded_output_connect_time,
+	.get_latency_estimate_ns = ffmpeg_encoded_output_latency_estimate_ns,
 	.get_dropped_frames = ffmpeg_encoded_output_dropped_frames};
