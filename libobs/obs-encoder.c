@@ -49,6 +49,7 @@ static bool init_encoder(struct obs_encoder *encoder, const char *name,
 	pthread_mutex_init_value(&encoder->callbacks_mutex);
 	pthread_mutex_init_value(&encoder->outputs_mutex);
 	pthread_mutex_init_value(&encoder->pause.mutex);
+	pthread_mutex_init_value(&encoder->latency_mutex);
 
 	if (pthread_mutexattr_init(&attr) != 0)
 		return false;
@@ -73,6 +74,9 @@ static bool init_encoder(struct obs_encoder *encoder, const char *name,
 		encoder->orig_info.get_defaults2(encoder->context.settings,
 						 encoder->orig_info.type_data);
 	}
+
+	circlebuf_init(&encoder->pending_frames);
+	circlebuf_reserve(&encoder->pending_frames, 16 * sizeof(struct encoder_pending_frame));
 
 	return true;
 }
@@ -273,9 +277,11 @@ static void obs_encoder_actually_destroy(obs_encoder_t *encoder)
 		pthread_mutex_destroy(&encoder->callbacks_mutex);
 		pthread_mutex_destroy(&encoder->outputs_mutex);
 		pthread_mutex_destroy(&encoder->pause.mutex);
+		pthread_mutex_destroy(&encoder->latency_mutex);
 		obs_context_data_free(&encoder->context);
 		if (encoder->owns_info_id)
 			bfree((void *)encoder->info.id);
+		circlebuf_free(&encoder->pending_frames);
 		bfree(encoder);
 	}
 }
@@ -300,6 +306,128 @@ void obs_encoder_destroy(obs_encoder_t *encoder)
 		if (destroy)
 			obs_encoder_actually_destroy(encoder);
 	}
+}
+
+static void
+add_pending_frame(struct obs_encoder *encoder, int64_t pts)
+{
+	struct encoder_pending_frame pf;
+
+	if (encoder->pending_frames.size) {
+		circlebuf_peek_back(&encoder->pending_frames, &pf, sizeof(pf));
+		if (pts < pf.pts) {
+			/* This is an issue because pending_frames should stay sorted.
+			 * Should be impossible; receive_video always increments the pts. */
+			blog(LOG_ERROR, "add_pending_frame: non-monotonic pts!");
+			encoder->pending_frames.size = 0;
+		}
+	}
+
+	if (encoder->pending_frames.size > sizeof(pf) * 10000) {
+		/* More than 10,000 frames of latency?  Something's wrong with the
+		 * encoder. */
+		blog(LOG_ERROR, "add_pending_frame: "
+			 			"pending_frames queue got extremely large.");
+		encoder->pending_frames.size = 0;
+	}
+
+	pf.pts = pts;
+	pf.input_time = os_gettime_ns();
+	pf.seen_output = false;
+
+	circlebuf_push_back(&encoder->pending_frames, &pf, sizeof(pf));
+}
+
+static void
+clear_pending_frames_before(struct obs_encoder *encoder, int64_t dts)
+{
+	struct encoder_pending_frame pf;
+
+	while (1) {
+		if (!encoder->pending_frames.size)
+			break;
+		circlebuf_peek_front(&encoder->pending_frames, &pf, sizeof(pf));
+		if (pf.pts >= dts)
+			break;
+		if (!pf.seen_output) {
+			blog(LOG_WARNING,
+				 "clear_pending_frames_before: "
+				 "encoder never returned a packet for pts %lld",
+				 (long long)dts);
+		}
+		circlebuf_pop_front(&encoder->pending_frames, NULL, sizeof(pf));
+	}
+}
+
+static struct encoder_pending_frame *
+find_pending_frame(struct obs_encoder *encoder, int64_t pts)
+{
+	/* binary search */
+	size_t lo = 0;
+	size_t hi = encoder->pending_frames.size / sizeof(struct encoder_pending_frame);
+	struct encoder_pending_frame *pf = NULL;
+	while (lo < hi) {
+		size_t idx = (lo + hi) / 2;
+		pf = circlebuf_data(&encoder->pending_frames, idx * sizeof(*pf), sizeof(*pf));
+		if (pf->pts < pts)
+			lo = idx + 1;
+		else if (pf->pts > pts)
+			hi = idx;
+		else
+			break;
+	}
+	return pf;
+}
+
+static void
+update_pending_frames_for_output(struct obs_encoder *encoder, int64_t pts, int64_t dts)
+{
+	clear_pending_frames_before(encoder, dts);
+	struct encoder_pending_frame *pf = find_pending_frame(encoder, pts);
+	if (!pf) {
+		blog(LOG_WARNING,
+			 "update_pending_frames_for_output: "
+			 "encoder returned a packet with pts %lld, which we didn't give it",
+			 (long long)pts);
+		return;
+	}
+	if (pf->seen_output) {
+		blog(LOG_WARNING,
+			 "update_pending_frames_for_output: "
+			 "encoder returned multiple packets with pts %lld",
+			 (long long)pts);
+		return;
+	}
+	pf->seen_output = true;
+	uint64_t now = os_gettime_ns();
+	uint64_t latency = now - pf->input_time;
+	//blog(LOG_WARNING, "latency[%lld]=%llu\n", (long long)pts, (unsigned long long)latency);
+
+	pthread_mutex_lock(&encoder->latency_mutex);
+	encoder->recent_latency_total += latency;
+	encoder->recent_latency_count++;
+	if (now - encoder->recent_latency_start_time > 1000000000) {
+		encoder->last_latency_estimate = encoder->recent_latency_total / encoder->recent_latency_count;
+		encoder->recent_latency_count = 0;
+		encoder->recent_latency_total = 0;
+		encoder->recent_latency_start_time = now;
+	}
+	pthread_mutex_unlock(&encoder->latency_mutex);
+}
+
+uint64_t obs_encoder_get_latency_estimate_ns(const obs_encoder_t *encoder)
+{
+	pthread_mutex_t *latency_mutex = (pthread_mutex_t *)&encoder->latency_mutex;
+	pthread_mutex_lock(latency_mutex);
+	uint64_t ret;
+	if (encoder->have_last_latency_estimate)
+		ret = encoder->last_latency_estimate;
+	else if (encoder->recent_latency_count > 0)
+		ret = encoder->recent_latency_total / encoder->recent_latency_count;
+	else
+		ret = 0;
+	pthread_mutex_unlock(latency_mutex);
+	return ret;
 }
 
 const char *obs_encoder_get_name(const obs_encoder_t *encoder)
@@ -575,6 +703,10 @@ static inline void obs_encoder_start_internal(
 		pause_reset(&encoder->pause);
 
 		encoder->cur_pts = 0;
+		encoder->pending_frames.size = 0;
+		pthread_mutex_lock(&encoder->latency_mutex);
+		encoder->recent_latency_start_time = os_gettime_ns();
+		pthread_mutex_unlock(&encoder->latency_mutex);
 		add_connection(encoder);
 	}
 }
@@ -931,6 +1063,8 @@ void send_off_encoder_packet(obs_encoder_t *encoder, bool success,
 			encoder->first_received = true;
 		}
 
+		update_pending_frames_for_output(encoder, pkt->pts, pkt->dts);
+
 		/* we use system time here to ensure sync with other encoders,
 		 * you do not want to use relative timestamps here */
 		pkt->dts_usec = encoder->start_ts / 1000 +
@@ -969,6 +1103,8 @@ bool do_encode(struct obs_encoder *encoder, struct encoder_frame *frame)
 	pkt.timebase_num = encoder->timebase_num;
 	pkt.timebase_den = encoder->timebase_den;
 	pkt.encoder = encoder;
+
+	add_pending_frame(encoder, frame->pts);
 
 	profile_start(encoder->profile_encoder_encode_name);
 	success = encoder->info.encode(encoder->context.data, frame, &pkt,

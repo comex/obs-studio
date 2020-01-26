@@ -14,6 +14,7 @@ OBSBasicStatusBar::OBSBasicStatusBar(QWidget *parent)
 	  streamTime(new QLabel),
 	  recordTime(new QLabel),
 	  cpuUsage(new QLabel),
+	  latency(new QLabel),
 	  transparentPixmap(20, 20),
 	  greenPixmap(20, 20),
 	  grayPixmap(20, 20),
@@ -45,6 +46,8 @@ OBSBasicStatusBar::OBSBasicStatusBar(QWidget *parent)
 	recordTime->setAlignment(Qt::AlignVCenter);
 	cpuUsage->setAlignment(Qt::AlignRight);
 	cpuUsage->setAlignment(Qt::AlignVCenter);
+	latency->setAlignment(Qt::AlignRight);
+	latency->setAlignment(Qt::AlignVCenter);
 	kbps->setAlignment(Qt::AlignRight);
 	kbps->setAlignment(Qt::AlignVCenter);
 
@@ -53,12 +56,14 @@ OBSBasicStatusBar::OBSBasicStatusBar(QWidget *parent)
 	streamTime->setIndent(20);
 	recordTime->setIndent(20);
 	cpuUsage->setIndent(20);
+	latency->setIndent(20);
 	kbps->setIndent(10);
 
 	addPermanentWidget(droppedFrames);
 	addPermanentWidget(streamTime);
 	addPermanentWidget(recordTime);
 	addPermanentWidget(cpuUsage);
+	addPermanentWidget(latency);
 	addPermanentWidget(delayInfo);
 	addPermanentWidget(brWidget);
 
@@ -153,6 +158,22 @@ void OBSBasicStatusBar::UpdateDelayMsg()
 	}
 
 	delayInfo->setText(msg);
+}
+
+void OBSBasicStatusBar::UpdateLatency()
+{
+	if (!streamOutput)
+		return;
+
+	obs_encoder_t *encoder = obs_output_get_video_encoder(streamOutput);
+	uint64_t estimateNS = obs_encoder_get_latency_estimate_ns(encoder);
+	double estimateMS = double(estimateNS) / 1000000.0;
+
+	QString text = QString("encode latency: ") + QString::number(estimateMS, 'f', 1) +
+		QString("ms");
+
+	latency->setText(text);
+	latency->setMinimumWidth(latency->width());
 }
 
 #define BITRATE_UPDATE_SECONDS 2
@@ -388,6 +409,8 @@ void OBSBasicStatusBar::ReconnectSuccess()
 void OBSBasicStatusBar::UpdateStatusBar()
 {
 	OBSBasic *main = qobject_cast<OBSBasic *>(parent());
+
+	UpdateLatency();
 
 	UpdateBandwidth();
 

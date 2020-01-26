@@ -306,7 +306,8 @@ static inline void circlebuf_pop_back(struct circlebuf *cb, void *data,
 		cb->end_pos -= size;
 }
 
-static inline void *circlebuf_data(struct circlebuf *cb, size_t idx)
+static inline void *circlebuf_data(struct circlebuf *cb, size_t idx,
+				      size_t size)
 {
 	uint8_t *ptr = (uint8_t *)cb->data;
 	size_t offset = cb->start_pos + idx;
@@ -316,6 +317,10 @@ static inline void *circlebuf_data(struct circlebuf *cb, size_t idx)
 
 	if (offset >= cb->capacity)
 		offset -= cb->capacity;
+
+	/* caller must ensure the requested data is stored contiguously */
+	assert(cb->capacity - offset >= size);
+	(void)size;
 
 	return ptr + offset;
 }

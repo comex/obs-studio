@@ -765,7 +765,7 @@ static void replay_buffer_save(struct ffmpeg_muxer *stream)
 
 	for (size_t i = 0; i < num_packets; i++) {
 		struct encoder_packet *pkt;
-		pkt = circlebuf_data(&stream->packets, i * size);
+		pkt = circlebuf_data(&stream->packets, i * size, size);
 
 		if (pkt->type == OBS_ENCODER_VIDEO) {
 			if (!found_video) {

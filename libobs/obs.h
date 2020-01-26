@@ -2084,6 +2084,9 @@ EXPORT void *obs_encoder_create_rerouted(obs_encoder_t *encoder,
 /** Returns whether encoder is paused */
 EXPORT bool obs_encoder_paused(const obs_encoder_t *output);
 
+/** Returns the running latency estimate */
+EXPORT uint64_t obs_encoder_get_latency_estimate_ns(const obs_encoder_t *encoder);
+
 /* ------------------------------------------------------------------------- */
 /* Stream Services */
 

@@ -63,7 +63,7 @@ static void update_interval(struct gpu_delay_filter_data *f,
 
 		for (size_t i = prev_num; i < num; i++) {
 			struct frame *frame =
-				circlebuf_data(&f->frames, i * sizeof(*frame));
+				circlebuf_data(&f->frames, i * sizeof(*frame), sizeof(*frame));
 			frame->render =
 				gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 		}

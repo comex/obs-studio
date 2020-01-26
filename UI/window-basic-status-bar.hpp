@@ -17,6 +17,7 @@ private:
 	QLabel *streamTime;
 	QLabel *recordTime;
 	QLabel *cpuUsage;
+	QLabel *latency;
 	QLabel *kbps;
 	QLabel *statusSquare;
 
@@ -58,6 +59,7 @@ private:
 	void Deactivate();
 
 	void UpdateDelayMsg();
+	void UpdateLatency();
 	void UpdateBandwidth();
 	void UpdateStreamTime();
 	void UpdateRecordTime();

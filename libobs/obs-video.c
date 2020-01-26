@@ -393,7 +393,8 @@ static inline bool queue_frame(struct obs_core_video *video, bool raw_active,
 	if (duplicate) {
 		struct obs_tex_frame *tf = circlebuf_data(
 			&video->gpu_encoder_queue,
-			video->gpu_encoder_queue.size - sizeof(*tf));
+			video->gpu_encoder_queue.size - sizeof(*tf),
+			sizeof(*tf));
 
 		/* texture-based encoding is stopping */
 		if (!tf) {

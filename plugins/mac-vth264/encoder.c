@@ -820,6 +820,11 @@ static bool vt_h264_encode(void *data, struct encoder_frame *frame,
 	STATUS_CHECK(VTCompressionSessionEncodeFrame(enc->session, pixbuf, pts,
 						     dur, NULL, pixbuf, NULL));
 
+	if (CMSimpleQueueGetCount(enc->queue) > 1) {
+		VT_BLOG(LOG_WARNING, "Multiple packets in vt_h264 encoder queue; "
+			"this will create unnecessary latency");
+	}
+
 	CMSampleBufferRef buffer =
 		(CMSampleBufferRef)CMSimpleQueueDequeue(enc->queue);
 

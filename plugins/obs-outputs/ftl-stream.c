@@ -726,7 +726,7 @@ static bool find_first_video_packet(struct ftl_stream *stream,
 
 	for (size_t i = 0; i < count; i++) {
 		struct encoder_packet *cur =
-			circlebuf_data(&stream->packets, i * sizeof(*first));
+			circlebuf_data(&stream->packets, i * sizeof(*first), sizeof(*first));
 		if (cur->type == OBS_ENCODER_VIDEO && !cur->keyframe) {
 			*first = *cur;
 			return true;

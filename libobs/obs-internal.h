@@ -1064,6 +1064,15 @@ struct obs_encoder {
 	struct pause_data pause;
 
 	const char *profile_encoder_encode_name;
+
+	/* array of struct encoder_pending_frame */
+	struct circlebuf pending_frames;
+	pthread_mutex_t latency_mutex;
+	bool have_last_latency_estimate;
+	uint64_t last_latency_estimate;
+	size_t recent_latency_count;
+	uint64_t recent_latency_total;
+	uint64_t recent_latency_start_time;
 };
 
 extern struct obs_encoder_info *find_encoder(const char *id);
@@ -1123,3 +1132,12 @@ extern bool obs_service_initialize(struct obs_service *service,
 				   struct obs_output *output);
 
 void obs_service_destroy(obs_service_t *service);
+
+/* ------------------------------------------------------------------------- */
+/* pending frame, used for latency estimation */
+
+struct encoder_pending_frame {
+	int64_t pts;
+	uint64_t input_time; /* when the encoder_frame was sent to encoder */
+	bool seen_output; /* have we gotten a corresponding encoder_packet yet? */
+};
