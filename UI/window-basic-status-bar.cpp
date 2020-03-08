@@ -160,6 +160,15 @@ void OBSBasicStatusBar::UpdateDelayMsg()
 	delayInfo->setText(msg);
 }
 
+static QString xxxms(int64_t ns) {
+	if (ns != -1) {
+		double ms = double(ns) / 1000000;
+		return QString::number(ms, 'f', 1) + "ms";
+	} else {
+		return "?";
+	}
+}
+
 void OBSBasicStatusBar::UpdateLatency()
 {
 	if (!streamOutput)
@@ -167,15 +176,10 @@ void OBSBasicStatusBar::UpdateLatency()
 
 	obs_encoder_t *encoder = obs_output_get_video_encoder(streamOutput);
 	uint64_t encoderLatencyNS = obs_encoder_get_latency_estimate_ns(encoder);
-	double encoderLatencyMS = double(encoderLatencyNS) / 1000000.0;
+	int64_t localLatencyNS = -1, networkLatencyNS = -1;
+	obs_output_get_latency_estimate_ns(streamOutput, &localLatencyNS, &networkLatencyNS);
 
-	int64_t outputLatencyNS = -1, networkLatencyNS = -1;
-	obs_output_get_latency_estimate_ns(streamOutput, &outputLatencyNS, &networkLatencyNS);
-	double outputLatencyMS = double(outputLatencyNS) / 1000000.0;
-
-	QString text = QString("latency: ") + QString::number(encoderLatencyMS, 'f', 1) +
-		QString("ms");
-	text += QString(" + ") + QString::number(outputLatencyMS, 'f', 1) + "ms";
+	QString text = QString("latency: ") + xxxms((int64_t)encoderLatencyNS) + " + " + xxxms(localLatencyNS) + " + " + xxxms(networkLatencyNS);
 	// todo: tooltip etc.
 
 	latency->setText(text);

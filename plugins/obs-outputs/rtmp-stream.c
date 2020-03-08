@@ -1523,7 +1523,7 @@ static void rtmp_stream_latency_estimate_ns(void *data, int64_t *local_latency, 
 	struct rtmp_stream *stream = data;
 
 	*local_latency = (uint64_t)stream->latency_estimate_usec * 1000;
-	*network_latency = 42;
+	*network_latency = -1;
 }
 
 struct obs_output_info rtmp_output_info = {

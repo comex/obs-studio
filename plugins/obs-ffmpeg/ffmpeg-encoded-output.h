@@ -55,6 +55,7 @@ struct droptest_info {
 struct ffmpeg_encoded_output {
 	obs_output_t *output;
 
+	pthread_mutex_t proto_mutex;
 	pthread_mutex_t packets_mutex;
 	struct circlebuf packets;
 	bool sent_sps_pps;

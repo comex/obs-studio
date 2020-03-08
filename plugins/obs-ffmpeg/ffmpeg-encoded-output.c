@@ -5,7 +5,7 @@
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 2 of the License, or
-    (at your option) any later version.
+    (at your eption) any later version.
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -607,6 +607,8 @@ static int proto_send_packet(struct ffmpeg_encoded_output *stream,
 	int ret = 0;
 	int streamIdx = (obs_packet->type == OBS_ENCODER_VIDEO) ? 0 : 1;
 
+	pthread_mutex_lock(&stream->proto_mutex);
+
 	//2. send
 	av_init_packet(&av_packet);
 
@@ -625,6 +627,8 @@ static int proto_send_packet(struct ffmpeg_encoded_output *stream,
 		bfree(obs_packet->data);
 	else
 		obs_encoder_packet_release(obs_packet);
+
+	pthread_mutex_unlock(&stream->proto_mutex);
 
 	return ret;
 }
@@ -664,6 +668,7 @@ static void ffmpeg_encoded_output_destroy(void *data)
 	os_event_destroy(stream->stop_event);
 	os_sem_destroy(stream->send_sem);
 	pthread_mutex_destroy(&stream->packets_mutex);
+	pthread_mutex_destroy(&stream->proto_mutex);
 	circlebuf_free(&stream->packets);
 #ifdef TEST_FRAMEDROPS
 	circlebuf_free(&stream->droptest_info);
@@ -687,6 +692,7 @@ static void *ffmpeg_encoded_output_create(obs_data_t *settings,
 
 	stream->output = output;
 	pthread_mutex_init_value(&stream->packets_mutex);
+	pthread_mutex_init_value(&stream->proto_mutex);
 
 	proto_init(stream);
 
@@ -860,7 +866,13 @@ static void ffmpeg_encoded_output_latency_estimate_ns(void *data, int64_t *local
 	struct ffmpeg_encoded_output *stream = data;
 
 	*local_latency = (int64_t)stream->latency_estimate_usec * 1000;
-	*network_latency = -1;
+	pthread_mutex_lock(&stream->proto_mutex);
+	int64_t snd_buf = -2;
+	int64_t snd_tsb_pd_delay = -2;
+	int ret1 = av_opt_get_int(stream->ff_data.output, "bstats-ms-snd-buf", AV_OPT_SEARCH_CHILDREN, &snd_buf);
+	int ret2 = av_opt_get_int(stream->ff_data.output, "bstats-ms-snd-tsb-pd-delay", AV_OPT_SEARCH_CHILDREN, &snd_tsb_pd_delay);
+	printf("snd-buf:(%d)%lld delay:(%d)%lld\n", ret1, snd_buf, ret2, snd_tsb_pd_delay);
+	pthread_mutex_unlock(&stream->proto_mutex);
 }
 
 struct obs_output_info ffmpeg_encoded_output_info = {

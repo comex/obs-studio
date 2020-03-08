@@ -353,7 +353,7 @@ clear_pending_frames_before(struct obs_encoder *encoder, int64_t dts)
 			blog(LOG_WARNING,
 				 "clear_pending_frames_before: "
 				 "encoder never returned a packet for pts %lld",
-				 (long long)dts);
+				 (long long)pf.pts);
 		}
 		circlebuf_pop_front(&encoder->pending_frames, NULL, sizeof(pf));
 	}
