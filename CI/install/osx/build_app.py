@@ -1,10 +1,13 @@
 #!/usr/bin/env python
+from os import makedirs, rename, walk, path as ospath
+from sys import argv
 
 candidate_paths = "bin obs-plugins data".split()
 
-plist_path = "../cmake/osxbundle/Info.plist"
-icon_path = "../cmake/osxbundle/obs.icns"
-run_path = "../cmake/osxbundle/obslaunch.sh"
+obs_src = ospath.join(ospath.dirname(argv[0]), '../../..')
+plist_path = ospath.join(obs_src, 'cmake/osxbundle/Info.plist')
+icon_path = ospath.join(obs_src, 'cmake/osxbundle/obs.icns')
+run_path = ospath.join(obs_src, 'cmake/osxbundle/obslaunch.sh')
 
 #not copied
 blacklist = """/usr /System""".split()
@@ -17,12 +20,10 @@ whitelist = """/usr/local""".split()
 #
 
 
-from sys import argv
 from glob import glob
 from subprocess import check_output, call
 from collections import namedtuple
-from shutil import copy, copytree, rmtree
-from os import makedirs, rename, walk, path as ospath
+from shutil import copy, copyfile, copytree, rmtree
 import plistlib
 
 import argparse
@@ -52,10 +53,10 @@ add_boolean_argument(parser, 'stable', default=False)
 parser.add_argument('-p', '--prefix', dest='prefix', default='')
 args = parser.parse_args()
 
-def cmd(cmd):
+def cmd(cmd, **kwargs):
     import subprocess
     import shlex
-    return subprocess.check_output(shlex.split(cmd)).rstrip('\r\n')
+    return subprocess.check_output(shlex.split(cmd), **kwargs).rstrip('\r\n')
 
 LibTarget = namedtuple("LibTarget", ("path", "external", "copy_as"))
 
@@ -67,8 +68,16 @@ build_path = args.dir
 build_path = build_path.replace("\\ ", " ")
 
 def add(name, external=False, copy_as=None):
+	framework_path = None
 	if external and copy_as is None:
-		copy_as = name.split("/")[-1]
+		split = name.split("/")
+		for i, chunk in enumerate(split):
+			if chunk.endswith('.framework'):
+				copy_as = "/".join(split[i:])
+				framework_path = "/".join(split[:i+1])
+				break
+		else:
+			copy_as = split[-1]
 	if name[0] != "/":
 		name = build_path+"/"+name
 	t = LibTarget(name, external, copy_as)
@@ -76,6 +85,11 @@ def add(name, external=False, copy_as=None):
 		return
 	inspect.append(t)
 	inspected.add(t)
+	if framework_path is not None and not name.endswith(".plist"):
+		plist_path = ospath.join(framework_path, "Resources/Info.plist")
+		print(plist_path, '??')
+		if ospath.exists(plist_path):
+			add(plist_path, external)
 
 
 for i in candidate_paths:
@@ -162,8 +176,8 @@ changes = " ".join(changes)
 
 info = plistlib.readPlist(plist_path)
 
-latest_tag = cmd('git describe --tags --abbrev=0')
-log = cmd('git log --pretty=oneline {0}...HEAD'.format(latest_tag))
+latest_tag = cmd('git describe --tags --abbrev=0', cwd=obs_src)
+log = cmd('git log --pretty=oneline {0}...HEAD'.format(latest_tag), cwd=obs_src)
 
 from os import path
 # set version
@@ -208,7 +222,7 @@ for path, external, copy_as in inspected:
 	filename = path
 	rpath = ""
 	if external:
-		if copy_as == "Python":
+		if ospath.basename(copy_as) == "Python":
 			continue
 		id_ = "-id '@rpath/%s'"%copy_as
 		filename = prefix + "bin/" +copy_as
@@ -219,7 +233,7 @@ for path, external, copy_as in inspected:
 				makedirs(prefix + "bin/" + dirs)
 			except:
 				pass
-		copy(path, filename)
+		copyfile(path, filename)
 	else:
 		filename = path[len(build_path)+1:]
 		id_ = "-id '@rpath/../%s'"%filename
@@ -228,8 +242,9 @@ for path, external, copy_as in inspected:
 			rpath = "-add_rpath '@loader_path/{}/'".format(ospath.relpath("bin/", ospath.dirname(filename)))
 		filename = prefix + filename
 
-	cmd = "{0}install_name_tool {1} {2} {3} '{4}'".format(args.prefix, changes, id_, rpath, filename)
-	call(cmd, shell=True)
+	if not filename.endswith(".plist"):
+		cmd = "{0}install_name_tool {1} {2} {3} '{4}'".format(args.prefix, changes, id_, rpath, filename)
+		call(cmd, shell=True)
 
 try:
 	rename("tmp", app_name)
