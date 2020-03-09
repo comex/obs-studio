@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 from os import makedirs, rename, walk, path as ospath
+from os.path import basename
 from sys import argv
 
-candidate_paths = "bin obs-plugins data".split()
+candidate_paths = [
+	("bin", "Contents/MacOS"),
+	("obs-plugins", "Contents/Plugins"),
+	("data", "Contents/Resources/data"),
+]
 
 obs_src = ospath.join(ospath.dirname(argv[0]), '../../..')
 plist_path = ospath.join(obs_src, 'cmake/osxbundle/Info.plist')
 icon_path = ospath.join(obs_src, 'cmake/osxbundle/obs.icns')
-run_path = ospath.join(obs_src, 'cmake/osxbundle/obslaunch.sh')
 
 #not copied
 blacklist = """/usr /System""".split()
@@ -23,9 +27,9 @@ whitelist = """/usr/local""".split()
 from glob import glob
 from subprocess import check_output, call
 from collections import namedtuple
-from shutil import copy, copyfile, copytree, rmtree
+from shutil import copy, copyfile, copytree, rmtree, ignore_patterns
 import plistlib
-
+import re
 import argparse
 
 def _str_to_bool(s):
@@ -45,7 +49,6 @@ parser = argparse.ArgumentParser(description='obs-studio package util')
 parser.add_argument('-d', '--base-dir', dest='dir', default='rundir/RelWithDebInfo')
 parser.add_argument('-n', '--build-number', dest='build_number', default='0')
 parser.add_argument('-k', '--public-key', dest='public_key', default='OBSPublicDSAKey.pem')
-parser.add_argument('-f', '--sparkle-framework', dest='sparkle', default=None)
 parser.add_argument('-b', '--base-url', dest='base_url', default='https://obsproject.com/osx_update')
 parser.add_argument('-u', '--user', dest='user', default='jp9000')
 parser.add_argument('-c', '--channel', dest='channel', default='master')
@@ -58,7 +61,7 @@ def cmd(cmd, **kwargs):
     import shlex
     return subprocess.check_output(shlex.split(cmd), **kwargs).rstrip('\r\n')
 
-LibTarget = namedtuple("LibTarget", ("path", "external", "copy_as"))
+LibTarget = namedtuple("LibTarget", ("bin_source", "external", "bin_target", "copy_source", "copy_target"))
 
 inspect = list()
 
@@ -67,32 +70,41 @@ inspected = set()
 build_path = args.dir
 build_path = build_path.replace("\\ ", " ")
 
-def add(name, external=False, copy_as=None):
-	framework_path = None
-	if external and copy_as is None:
-		split = name.split("/")
-		for i, chunk in enumerate(split):
-			if chunk.endswith('.framework'):
-				copy_as = "/".join(split[i:])
-				framework_path = "/".join(split[:i+1])
+dylib_path_prefix = "@executable_path/../.."
+
+def add(bin_source, external=False, bin_target=None):
+	copy_source = None
+	copy_target = None
+	if bin_target is None:
+		assert external
+		split = bin_source.split("/")
+		for i, bit in enumerate(split):
+			if bit.endswith(".framework"):
+				# /path/to/Foo.framework
+				copy_source = "/".join(split[:i+1])
+				# Contents/Frameworks/Foo.framework
+				copy_target = ospath.join("Contents/Frameworks", split[i])
+				# Contents/Frameworks/Foo.framework/Versions/A/Foo
+				bin_target = ospath.join(copy_target, "/".join(split[i+1:]))
 				break
 		else:
-			copy_as = split[-1]
-	if name[0] != "/":
-		name = build_path+"/"+name
-	t = LibTarget(name, external, copy_as)
+			bin_target = ospath.join("Contents/MacOS", split[-1])
+	if not external:
+		bin_source = ospath.join(build_path, bin_source)
+	copy_source = copy_source or bin_source
+	copy_target = copy_target or bin_target
+	assert not ospath.isabs(copy_target)
+	t = LibTarget(bin_source, external, bin_target, copy_source, copy_target)
 	if t in inspected:
 		return
 	inspect.append(t)
 	inspected.add(t)
-	if framework_path is not None and not name.endswith(".plist"):
-		plist_path = ospath.join(framework_path, "Resources/Info.plist")
-		print(plist_path, '??')
-		if ospath.exists(plist_path):
-			add(plist_path, external)
 
 
-for i in candidate_paths:
+info = plistlib.readPlist(plist_path)
+
+for i, copy_base in candidate_paths:
+	copytree(ospath.join(build_path, i), ospath.join("tmp", copy_base), symlinks=True)
 	print("Checking " + i)
 	for root, dirs, files in walk(build_path+"/"+i):
 		for file_ in files:
@@ -114,9 +126,9 @@ for i in candidate_paths:
 					continue
 			except:
 				continue
-			rel_path = path[len(build_path)+1:]
+			rel_path = ospath.relpath(path, build_path)
 			print(repr(path), repr(rel_path))
-			add(rel_path)
+			add(rel_path, False, ospath.join(copy_base, i))
 
 def add_plugins(path, replace):
 	for img in glob(path.replace(
@@ -126,14 +138,14 @@ def add_plugins(path, replace):
 			"share/qt5/plugins/%s/*"%replace)):
 		if "_debug" in img:
 			continue
-		add(img, True, img.split("plugins/")[-1])
+		add(img, True, ospath.join("Contents/MacOS", img.split("plugins/")[-1]))
 
-actual_sparkle_path = '@loader_path/Frameworks/Sparkle.framework/Versions/A/Sparkle'
+seen_paths_for_dylib = {}
 
 while inspect:
 	target = inspect.pop()
 	print("inspecting", repr(target))
-	path = target.path
+	path = target.bin_source
 	if path[0] == "@":
 		continue
 	out = check_output("{0}otool -L '{1}'".format(args.prefix, path), shell=True,
@@ -146,11 +158,18 @@ while inspect:
 		add_plugins(path, "styles")
 
 
+	otool_paths = [line.strip().split(" (")[0] for line in out.split("\n")[1:]]
+
 	for line in out.split("\n")[1:]:
 		new = line.strip().split(" (")[0]
-		if '@' in new and "sparkle.framework" in new.lower():
-			actual_sparkle_path = new
-			print "Using sparkle path:", repr(actual_sparkle_path)
+		bn = basename(new)
+
+		seen_paths_for_dylib.setdefault(bn, set()).add(new)
+
+		if bn == basename(path):
+			# This is the ID_DYLIB, not a dependency
+			continue
+
 		if not new or new[0] == "@" or new.endswith(path.split("/")[-1]):
 			continue
 		whitelisted = False
@@ -168,13 +187,10 @@ while inspect:
 		add(new, True)
 
 changes = list()
-for path, external, copy_as in inspected:
-	if not external:
-		continue #built with install_rpath hopefully
-	changes.append("-change '%s' '@rpath/%s'"%(path, copy_as))
+for bin_source, external, bin_target, copy_source, copy_target in inspected:
+	for seen_path in seen_paths_for_dylib.get(basename(bin_source), set()):
+		changes.append("-change '%s' '%s/%s'"%(seen_path, dylib_path_prefix, bin_target))
 changes = " ".join(changes)
-
-info = plistlib.readPlist(plist_path)
 
 latest_tag = cmd('git describe --tags --abbrev=0', cwd=obs_src)
 log = cmd('git log --pretty=oneline {0}...HEAD'.format(latest_tag), cwd=obs_src)
@@ -196,55 +212,32 @@ info["OBSFeedsURL"] = '{0}/feeds.xml'.format(args.base_url)
 app_name = info["CFBundleName"]+".app"
 icon_file = "tmp/Contents/Resources/%s"%info["CFBundleIconFile"]
 
-copytree(build_path, "tmp/Contents/Resources/", symlinks=True)
 copy(icon_path, icon_file)
 plistlib.writePlist(info, "tmp/Contents/Info.plist")
-makedirs("tmp/Contents/MacOS")
-copy(run_path, "tmp/Contents/MacOS/%s"%info["CFBundleExecutable"])
 try:
 	copy(args.public_key, "tmp/Contents/Resources")
 except:
 	pass
 
-if args.sparkle is not None:
-    copytree(args.sparkle, "tmp/Contents/Frameworks/Sparkle.framework", symlinks=True)
+for bin_source, external, bin_target, copy_source, copy_target in inspected:
+	id_ = "-id '{0}/{1}'".format(dylib_path_prefix, bin_target)
+	copy_target = ospath.join("tmp", copy_target)
 
-prefix = "tmp/Contents/Resources/"
-sparkle_path = '@loader_path/{0}/Frameworks/Sparkle.framework/Versions/A/Sparkle'
-
-cmd('{0}install_name_tool -change {1} {2} {3}/bin/obs'.format(
-    args.prefix, actual_sparkle_path, sparkle_path.format('../..'), prefix))
-
-
-
-for path, external, copy_as in inspected:
-	id_ = ""
-	filename = path
-	rpath = ""
 	if external:
-		if ospath.basename(copy_as) == "Python":
-			continue
-		id_ = "-id '@rpath/%s'"%copy_as
-		filename = prefix + "bin/" +copy_as
-		rpath = "-add_rpath @loader_path/ -add_rpath @executable_path/"
-		if "/" in copy_as:
-			try:
-				dirs = copy_as.rsplit("/", 1)[0]
-				makedirs(prefix + "bin/" + dirs)
-			except:
-				pass
-		copyfile(path, filename)
-	else:
-		filename = path[len(build_path)+1:]
-		id_ = "-id '@rpath/../%s'"%filename
-		if not filename.startswith("bin"):
-			print(filename)
-			rpath = "-add_rpath '@loader_path/{}/'".format(ospath.relpath("bin/", ospath.dirname(filename)))
-		filename = prefix + filename
+		assert basename(copy_target) != "Python"
+		dn = ospath.dirname(copy_target)
+		if not ospath.exists(dn):
+			makedirs(dn)
+		if ospath.exists(copy_target):
+			pass
+		elif ospath.isfile(copy_source):
+			copyfile(copy_source, copy_target)
+		else:
+			copytree(copy_source, copy_target, symlinks=True,
+				ignore=ignore_patterns("Headers"))
 
-	if not filename.endswith(".plist"):
-		cmd = "{0}install_name_tool {1} {2} {3} '{4}'".format(args.prefix, changes, id_, rpath, filename)
-		call(cmd, shell=True)
+	icmd = "{0}install_name_tool {1} {2} '{3}'".format(args.prefix, changes, id_, bin_target)
+	call(icmd, shell=True)
 
 try:
 	rename("tmp", app_name)

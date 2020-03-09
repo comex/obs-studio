@@ -44,8 +44,10 @@ bool GetDataFilePath(const char *data, string &output)
 			stringWithFormat:@"Contents/Resources/data/obs-studio/%@",
 					 [NSString stringWithUTF8String:data]];
 		NSURL *dataURL = [bundleURL URLByAppendingPathComponent:path];
+		NSLog(@"??? %@", dataURL);
 		output = [[dataURL path] UTF8String];
 	} else {
+		NSLog(@"not in bundle!?");
 		stringstream str;
 		str << OBS_DATA_PATH "/obs-studio/" << data;
 		output = str.str();
