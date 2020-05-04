@@ -325,6 +325,11 @@ static inline void *circlebuf_data(struct circlebuf *cb, size_t idx,
 	return ptr + offset;
 }
 
+static inline void circlebuf_clear(struct circlebuf *cb)
+{
+	cb->start_pos = cb->end_pos = cb->size = 0;
+}
+
 #ifdef __cplusplus
 }
 #endif

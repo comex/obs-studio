@@ -872,6 +872,9 @@ static void ffmpeg_encoded_output_latency_estimate_ns(void *data, int64_t *local
 	int ret1 = av_opt_get_int(stream->ff_data.output, "bstats-ms-snd-buf", AV_OPT_SEARCH_CHILDREN, &snd_buf);
 	int ret2 = av_opt_get_int(stream->ff_data.output, "bstats-ms-snd-tsb-pd-delay", AV_OPT_SEARCH_CHILDREN, &snd_tsb_pd_delay);
 	printf("snd-buf:(%d)%lld delay:(%d)%lld\n", ret1, snd_buf, ret2, snd_tsb_pd_delay);
+	if (!ret1 && !ret2) {
+		*network_latency = (int64_t)(snd_buf + snd_tsb_pd_delay) * 1000000;
+	}
 	pthread_mutex_unlock(&stream->proto_mutex);
 }
 

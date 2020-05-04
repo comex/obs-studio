@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from os import makedirs, rename, walk, path as ospath
+from os import makedirs, rename, walk, path as ospath, lstat, chmod
 from os.path import basename
 from sys import argv
 
@@ -73,6 +73,7 @@ build_path = build_path.replace("\\ ", " ")
 dylib_path_prefix = "@executable_path/../.."
 
 def add(bin_source, external=False, bin_target=None):
+	print(("add", external, bin_target))
 	copy_source = None
 	copy_target = None
 	if bin_target is None:
@@ -106,7 +107,8 @@ info = plistlib.readPlist(plist_path)
 for i, copy_base in candidate_paths:
 	copytree(ospath.join(build_path, i), ospath.join("tmp", copy_base), symlinks=True)
 	print("Checking " + i)
-	for root, dirs, files in walk(build_path+"/"+i):
+	sub_path = ospath.join(build_path, i)
+	for root, dirs, files in walk(sub_path):
 		for file_ in files:
 			if ".ini" in file_:
 				continue
@@ -128,7 +130,7 @@ for i, copy_base in candidate_paths:
 				continue
 			rel_path = ospath.relpath(path, build_path)
 			print(repr(path), repr(rel_path))
-			add(rel_path, False, ospath.join(copy_base, i))
+			add(rel_path, False, ospath.join(copy_base, ospath.relpath(path, sub_path)))
 
 def add_plugins(path, replace):
 	for img in glob(path.replace(
@@ -236,7 +238,12 @@ for bin_source, external, bin_target, copy_source, copy_target in inspected:
 			copytree(copy_source, copy_target, symlinks=True,
 				ignore=ignore_patterns("Headers"))
 
-	icmd = "{0}install_name_tool {1} {2} '{3}'".format(args.prefix, changes, id_, bin_target)
+	my_target = ospath.join("tmp", bin_target) # XXX
+	if ospath.islink(my_target):
+		raise Exception("it's a symlink?")
+	chmod(my_target, lstat(my_target).st_mode | 0o600)
+
+	icmd = "{0}install_name_tool {1} {2} '{3}'".format(args.prefix, changes, id_, my_target)
 	call(icmd, shell=True)
 
 try:

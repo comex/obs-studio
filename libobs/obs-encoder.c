@@ -17,6 +17,8 @@
 
 #include "obs.h"
 #include "obs-internal.h"
+#include <zlib.h>
+#include <dispatch/dispatch.h>
 
 #define encoder_active(encoder) os_atomic_load_bool(&encoder->active)
 #define set_encoder_active(encoder, val) \
@@ -311,6 +313,7 @@ void obs_encoder_destroy(obs_encoder_t *encoder)
 static void
 add_pending_frame(struct obs_encoder *encoder, int64_t pts)
 {
+	//printf("INPUT pts=%lld\n", pts);
 	struct encoder_pending_frame pf;
 
 	if (encoder->pending_frames.size) {
@@ -365,23 +368,27 @@ find_pending_frame(struct obs_encoder *encoder, int64_t pts)
 	/* binary search */
 	size_t lo = 0;
 	size_t hi = encoder->pending_frames.size / sizeof(struct encoder_pending_frame);
-	struct encoder_pending_frame *pf = NULL;
+	struct encoder_pending_frame *ret = NULL;
 	while (lo < hi) {
 		size_t idx = (lo + hi) / 2;
-		pf = circlebuf_data(&encoder->pending_frames, idx * sizeof(*pf), sizeof(*pf));
-		if (pf->pts < pts)
+		struct encoder_pending_frame *pf =
+			circlebuf_data(&encoder->pending_frames, idx * sizeof(*pf), sizeof(*pf));
+		if (pf->pts < pts) {
 			lo = idx + 1;
-		else if (pf->pts > pts)
+		} else if (pf->pts > pts) {
 			hi = idx;
-		else
+		} else {
+			ret = pf;
 			break;
+		}
 	}
-	return pf;
+	return ret;
 }
 
 static void
 update_pending_frames_for_output(struct obs_encoder *encoder, int64_t pts, int64_t dts)
 {
+	//printf("OUTPUT pts=%lld dts=%lld\n", pts, dts);
 	clear_pending_frames_before(encoder, dts);
 	struct encoder_pending_frame *pf = find_pending_frame(encoder, pts);
 	if (!pf) {
@@ -706,6 +713,7 @@ static inline void obs_encoder_start_internal(
 		encoder->pending_frames.size = 0;
 		pthread_mutex_lock(&encoder->latency_mutex);
 		encoder->recent_latency_start_time = os_gettime_ns();
+		circlebuf_clear(&encoder->pending_frames);
 		pthread_mutex_unlock(&encoder->latency_mutex);
 		add_connection(encoder);
 	}
@@ -1047,6 +1055,15 @@ void full_stop(struct obs_encoder *encoder)
 	}
 }
 
+static int enable_timing_spam(void) {
+    static int enable;
+    static dispatch_once_t pred;
+    dispatch_once(&pred, ^{
+        enable = !!getenv("TIMING_SPAM_OBS");
+    });
+    return enable;
+}
+
 void send_off_encoder_packet(obs_encoder_t *encoder, bool success,
 			     bool received, struct encoder_packet *pkt)
 {
@@ -1063,6 +1080,17 @@ void send_off_encoder_packet(obs_encoder_t *encoder, bool success,
 			encoder->first_received = true;
 		}
 
+		if (enable_timing_spam()) {
+
+			uint64_t xnow = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) / 1000;
+			uint32_t crc = crc32_z(0, pkt->data, pkt->size);
+			printf("* pts=%f dts=%f [%08x len=%zu] @ %llu\n",
+				(double)(pkt->pts * MICROSECOND_DEN / pkt->timebase_den) / 1000000,
+				(double)packet_dts_usec(pkt) / 1000000,
+				crc,
+				pkt->size,
+				xnow);
+		}
 		update_pending_frames_for_output(encoder, pkt->pts, pkt->dts);
 
 		/* we use system time here to ensure sync with other encoders,
