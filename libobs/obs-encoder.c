@@ -18,7 +18,10 @@
 #include "obs.h"
 #include "obs-internal.h"
 #include <zlib.h>
+#define TIMING_SPAM 0
+#if TIMING_SPAM
 #include <dispatch/dispatch.h>
+#endif
 
 #define encoder_active(encoder) os_atomic_load_bool(&encoder->active)
 #define set_encoder_active(encoder, val) \
@@ -1055,6 +1058,7 @@ void full_stop(struct obs_encoder *encoder)
 	}
 }
 
+#if TIMING_SPAM
 static int enable_timing_spam(void) {
     static int enable;
     static dispatch_once_t pred;
@@ -1063,6 +1067,7 @@ static int enable_timing_spam(void) {
     });
     return enable;
 }
+#endif
 
 void send_off_encoder_packet(obs_encoder_t *encoder, bool success,
 			     bool received, struct encoder_packet *pkt)
@@ -1080,6 +1085,7 @@ void send_off_encoder_packet(obs_encoder_t *encoder, bool success,
 			encoder->first_received = true;
 		}
 
+#if TIMING_SPAM
 		if (enable_timing_spam()) {
 
 			uint64_t xnow = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) / 1000;
@@ -1091,6 +1097,7 @@ void send_off_encoder_packet(obs_encoder_t *encoder, bool success,
 				pkt->size,
 				xnow);
 		}
+#endif
 		update_pending_frames_for_output(encoder, pkt->pts, pkt->dts);
 
 		/* we use system time here to ensure sync with other encoders,
