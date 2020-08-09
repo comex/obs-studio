@@ -234,6 +234,11 @@ struct obs_tex_frame {
 	bool released;
 };
 
+struct obs_task_info {
+	obs_task_t task;
+	void *param;
+};
+
 struct obs_core_video {
 	graphics_t *graphics;
 	gs_stagesurf_t *copy_surfaces[NUM_TEXTURES][NUM_CHANNELS];
@@ -306,6 +311,9 @@ struct obs_core_video {
 	gs_effect_t *deinterlace_yadif_2x_effect;
 
 	struct obs_video_info ovi;
+
+	pthread_mutex_t task_mutex;
+	struct circlebuf tasks;
 };
 
 struct audio_monitor;
@@ -420,11 +428,33 @@ struct obs_core {
 	struct obs_core_audio audio;
 	struct obs_core_data data;
 	struct obs_core_hotkeys hotkeys;
+
+	obs_task_handler_t ui_task_handler;
 };
 
 extern struct obs_core *obs;
 
+struct obs_graphics_context {
+	uint64_t last_time;
+	uint64_t interval;
+	uint64_t frame_time_total_ns;
+	uint64_t fps_total_ns;
+	uint32_t fps_total_frames;
+#ifdef _WIN32
+	bool gpu_was_active;
+#endif
+	bool raw_was_active;
+	bool was_active;
+	const char *video_thread_name;
+};
+
 extern void *obs_graphics_thread(void *param);
+extern bool obs_graphics_thread_loop(struct obs_graphics_context *context);
+#ifdef __APPLE__
+extern void *obs_graphics_thread_autorelease(void *param);
+extern bool
+obs_graphics_thread_loop_autorelease(struct obs_graphics_context *context);
+#endif
 
 extern gs_effect_t *obs_load_effect(gs_effect_t **effect, const char *file);
 
@@ -726,6 +756,8 @@ struct obs_source {
 };
 
 extern struct obs_source_info *get_source_info(const char *id);
+extern struct obs_source_info *get_source_info2(const char *unversioned_id,
+						uint32_t ver);
 extern bool obs_source_init_context(struct obs_source *source,
 				    obs_data_t *settings, const char *name,
 				    obs_data_t *hotkey_data, bool private);
@@ -1073,6 +1105,7 @@ struct obs_encoder {
 	size_t recent_latency_count;
 	uint64_t recent_latency_total;
 	uint64_t recent_latency_start_time;
+	char *last_error_message;
 };
 
 extern struct obs_encoder_info *find_encoder(const char *id);

@@ -8,6 +8,8 @@
 #include <QStaticText>
 #include <QSvgRenderer>
 #include <QAbstractListModel>
+#include <obs.hpp>
+#include <obs-frontend-api.h>
 
 class QLabel;
 class QCheckBox;
@@ -68,6 +70,7 @@ private:
 	OBSSignal sceneRemoveSignal;
 	OBSSignal itemRemoveSignal;
 	OBSSignal groupReorderSignal;
+	OBSSignal selectSignal;
 	OBSSignal deselectSignal;
 	OBSSignal visibleSignal;
 	OBSSignal lockedSignal;
@@ -88,6 +91,7 @@ private slots:
 
 	void ExpandClicked(bool checked);
 
+	void Select();
 	void Deselect();
 };
 

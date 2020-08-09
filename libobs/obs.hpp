@@ -236,7 +236,7 @@ public:
 	}
 
 	OBSSignal(const OBSSignal &) = delete;
-	OBSSignal(OBSSignal &&other)
+	OBSSignal(OBSSignal &&other) noexcept
 		: handler(other.handler),
 		  signal(other.signal),
 		  callback(other.callback),
@@ -249,7 +249,7 @@ public:
 	}
 
 	OBSSignal &operator=(const OBSSignal &) = delete;
-	OBSSignal &operator=(OBSSignal &&other)
+	OBSSignal &operator=(OBSSignal &&other) noexcept
 	{
 		Disconnect();
 
@@ -265,17 +265,4 @@ public:
 
 		return *this;
 	}
-};
-
-class OBSContext {
-public:
-	inline OBSContext() {}
-	inline OBSContext(const char *locale,
-			  const char *module_config_path = nullptr,
-			  profiler_name_store *store = nullptr)
-	{
-		obs_startup(locale, module_config_path, store);
-	}
-
-	inline ~OBSContext() { obs_shutdown(); }
 };

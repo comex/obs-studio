@@ -9,6 +9,7 @@
 #include "decklink-devices.hpp"
 
 #include "../../libobs/media-io/video-scaler.h"
+#include "../../libobs/util/util_uint64.h"
 
 static void decklink_output_destroy(void *data)
 {
@@ -59,6 +60,9 @@ static bool decklink_output_start(void *data)
 	ComPtr<DeckLinkDevice> device;
 
 	device.Set(deviceEnum->FindByHash(decklink->deviceHash));
+
+	if (!device)
+		return false;
 
 	DeckLinkDeviceMode *mode = device->FindOutputMode(decklink->modeID);
 
@@ -124,8 +128,8 @@ static bool prepare_audio(DeckLinkOutput *decklink,
 	*output = *frame;
 
 	if (frame->timestamp < decklink->start_timestamp) {
-		uint64_t duration = (uint64_t)frame->frames * 1000000000 /
-				    (uint64_t)decklink->audio_samplerate;
+		uint64_t duration = util_mul_div64(frame->frames, 1000000000ULL,
+						   decklink->audio_samplerate);
 		uint64_t end_ts = frame->timestamp + duration;
 		uint64_t cutoff;
 
@@ -135,7 +139,8 @@ static bool prepare_audio(DeckLinkOutput *decklink,
 		cutoff = decklink->start_timestamp - frame->timestamp;
 		output->timestamp += cutoff;
 
-		cutoff *= (uint64_t)decklink->audio_samplerate / 1000000000;
+		cutoff = util_mul_div64(cutoff, decklink->audio_samplerate,
+					1000000000ULL);
 
 		for (size_t i = 0; i < decklink->audio_planes; i++)
 			output->data[i] +=

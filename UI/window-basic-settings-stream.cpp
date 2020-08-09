@@ -224,11 +224,14 @@ void OBSBasicSettings::UpdateKeyLink()
 		streamKeyLink =
 			"https://restream.io/settings/streaming-setup?from=OBS";
 	} else if (serviceName == "Facebook Live") {
-		streamKeyLink = "https://www.facebook.com/live/create?ref=OBS";
+		streamKeyLink =
+			"https://www.facebook.com/live/producer?ref=OBS";
 	} else if (serviceName.startsWith("Twitter")) {
 		streamKeyLink = "https://www.pscp.tv/account/producer";
 	} else if (serviceName.startsWith("YouStreamer")) {
-		streamKeyLink = "https://www.app.youstreamer.com/stream/";
+		streamKeyLink = "https://app.youstreamer.com/stream/";
+	} else if (serviceName == "Trovo") {
+		streamKeyLink = "https://studio.trovo.live/mychannel/stream";
 	}
 
 	if (QString(streamKeyLink).isNull()) {
@@ -264,7 +267,7 @@ void OBSBasicSettings::LoadServices(bool showAll)
 	}
 
 	if (showAll)
-		names.sort();
+		names.sort(Qt::CaseInsensitive);
 
 	for (QString &name : names)
 		ui->service->addItem(name);

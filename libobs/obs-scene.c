@@ -17,6 +17,7 @@
 ******************************************************************************/
 
 #include "util/threading.h"
+#include "util/util_uint64.h"
 #include "graphics/math-defs.h"
 #include "obs-scene.h"
 
@@ -86,7 +87,7 @@ static void *scene_create(obs_data_t *settings, struct obs_source *source)
 	struct obs_scene *scene = bzalloc(sizeof(struct obs_scene));
 	scene->source = source;
 
-	if (source->info.id == group_info.id) {
+	if (strcmp(source->info.id, group_info.id) == 0) {
 		scene->is_group = true;
 		scene->custom_size = true;
 		scene->cx = 0;
@@ -737,7 +738,7 @@ static void scene_load_item(struct obs_scene *scene, obs_data_t *item_data)
 		return;
 	}
 
-	item->is_group = source->info.id == group_info.id;
+	item->is_group = strcmp(source->info.id, group_info.id) == 0;
 
 	obs_data_set_default_int(item_data, "align",
 				 OBS_ALIGN_TOP | OBS_ALIGN_LEFT);
@@ -974,8 +975,8 @@ static void apply_scene_item_audio_actions(struct obs_scene_item *item,
 		if (timestamp < ts)
 			timestamp = ts;
 
-		new_frame_num = (timestamp - ts) * (uint64_t)sample_rate /
-				1000000000ULL;
+		new_frame_num = util_mul_div64(timestamp - ts, sample_rate,
+					       1000000000ULL);
 
 		if (ts && new_frame_num >= AUDIO_OUTPUT_FRAMES)
 			break;
@@ -1024,8 +1025,8 @@ static bool apply_scene_item_volume(struct obs_scene_item *item, float **buf,
 	pthread_mutex_unlock(&item->actions_mutex);
 
 	if (actions_pending) {
-		uint64_t duration = (uint64_t)AUDIO_OUTPUT_FRAMES *
-				    1000000000ULL / (uint64_t)sample_rate;
+		uint64_t duration = util_mul_div64(AUDIO_OUTPUT_FRAMES,
+						   1000000000ULL, sample_rate);
 
 		if (!ts || action.timestamp < (ts + duration)) {
 			apply_scene_item_audio_actions(item, buf, ts,
@@ -1166,7 +1167,7 @@ const struct obs_source_info scene_info = {
 	.id = "scene",
 	.type = OBS_SOURCE_TYPE_SCENE,
 	.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW |
-			OBS_SOURCE_COMPOSITE,
+			OBS_SOURCE_COMPOSITE | OBS_SOURCE_DO_NOT_DUPLICATE,
 	.get_name = scene_getname,
 	.create = scene_create,
 	.destroy = scene_destroy,
@@ -1410,7 +1411,7 @@ obs_source_t *obs_scene_get_source(const obs_scene_t *scene)
 
 obs_scene_t *obs_scene_from_source(const obs_source_t *source)
 {
-	if (!source || source->info.id != scene_info.id)
+	if (!source || strcmp(source->info.id, scene_info.id) != 0)
 		return NULL;
 
 	return source->context.data;
@@ -1418,7 +1419,7 @@ obs_scene_t *obs_scene_from_source(const obs_source_t *source)
 
 obs_scene_t *obs_group_from_source(const obs_source_t *source)
 {
-	if (!source || source->info.id != group_info.id)
+	if (!source || strcmp(source->info.id, group_info.id) != 0)
 		return NULL;
 
 	return source->context.data;
@@ -1691,7 +1692,7 @@ static obs_sceneitem_t *obs_scene_add_internal(obs_scene_t *scene,
 	item->actions_mutex = mutex;
 	item->user_visible = true;
 	item->locked = false;
-	item->is_group = source->info.id == group_info.id;
+	item->is_group = strcmp(source->info.id, group_info.id) == 0;
 	item->private_settings = obs_data_create();
 	item->toggle_visibility = OBS_INVALID_HOTKEY_PAIR_ID;
 	os_atomic_set_long(&item->active_refs, 1);
@@ -1752,6 +1753,9 @@ obs_sceneitem_t *obs_scene_add(obs_scene_t *scene, obs_source_t *source)
 	obs_sceneitem_t *item = obs_scene_add_internal(scene, source, NULL);
 	struct calldata params;
 	uint8_t stack[128];
+
+	if (!item)
+		return NULL;
 
 	calldata_init_fixed(&params, stack, sizeof(stack));
 	calldata_set_ptr(&params, "scene", scene);
@@ -2983,7 +2987,7 @@ obs_sceneitem_t *obs_sceneitem_get_group(obs_scene_t *scene,
 
 bool obs_source_is_group(const obs_source_t *source)
 {
-	return source && source->info.id == group_info.id;
+	return source && strcmp(source->info.id, group_info.id) == 0;
 }
 
 bool obs_scene_is_group(const obs_scene_t *scene)

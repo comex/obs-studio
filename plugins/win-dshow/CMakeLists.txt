@@ -12,11 +12,22 @@ set(win-dshow_HEADERS
 	encode-dstr.hpp
 	ffmpeg-decode.h)
 
+set(MODULE_DESCRIPTION "OBS DirectShow module")
+configure_file(${CMAKE_SOURCE_DIR}/cmake/winrc/obs-module.rc.in win-dshow.rc)
 set(win-dshow_SOURCES
 	win-dshow.cpp
 	win-dshow-encoder.cpp
 	dshow-plugin.cpp
-	ffmpeg-decode.c)
+	ffmpeg-decode.c
+	win-dshow.rc)
+
+set(virtualcam-output_SOURCES
+	tiny-nv12-scale.c
+	shared-memory-queue.c
+	virtualcam.c)
+set(virtualcam-output_HEADERS
+	tiny-nv12-scale.h
+	shared-memory-queue.h)
 
 set(libdshowcapture_SOURCES
 	libdshowcapture/source/capture-filter.cpp
@@ -51,6 +62,8 @@ set(libdshowcapture_HEADERS
 add_library(win-dshow MODULE
 	${win-dshow_SOURCES}
 	${win-dshow_HEADERS}
+	${virtualcam-output_SOURCES}
+	${virtualcam-output_HEADERS}
 	${libdshowcapture_SOURCES}
 	${libdshowcapture_HEADERS})
 target_link_libraries(win-dshow
@@ -58,6 +71,13 @@ target_link_libraries(win-dshow
 	strmiids
 	ksuser
 	wmcodecdspuuid
+	w32-pthreads
 	${FFMPEG_LIBRARIES})
+set_target_properties(win-dshow PROPERTIES FOLDER "plugins/win-dshow")
+
+source_group("libdshowcapture\\Source Files" FILES ${libdshowcapture_SOURCES})
+source_group("libdshowcapture\\Header Files" FILES ${libdshowcapture_HEADERS})
 
 install_obs_plugin_with_data(win-dshow data)
+
+add_subdirectory(virtualcam-module)

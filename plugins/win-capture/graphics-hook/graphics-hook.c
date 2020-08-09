@@ -531,9 +531,9 @@ static inline bool init_shared_info(size_t size, HWND window)
 	return true;
 }
 
-bool capture_init_shtex(struct shtex_data **data, HWND window, uint32_t base_cx,
-			uint32_t base_cy, uint32_t cx, uint32_t cy,
-			uint32_t format, bool flip, uintptr_t handle)
+bool capture_init_shtex(struct shtex_data **data, HWND window, uint32_t cx,
+			uint32_t cy, uint32_t format, bool flip,
+			uintptr_t handle)
 {
 	if (!init_shared_info(sizeof(struct shtex_data), window)) {
 		hlog("capture_init_shtex: Failed to initialize memory");
@@ -553,8 +553,8 @@ bool capture_init_shtex(struct shtex_data **data, HWND window, uint32_t base_cx,
 	global_hook_info->map_size = sizeof(struct shtex_data);
 	global_hook_info->cx = cx;
 	global_hook_info->cy = cy;
-	global_hook_info->base_cx = base_cx;
-	global_hook_info->base_cy = base_cy;
+	global_hook_info->UNUSED_base_cx = cx;
+	global_hook_info->UNUSED_base_cy = cy;
 
 	if (!SetEvent(signal_ready)) {
 		hlog("capture_init_shtex: Failed to signal ready: %d",
@@ -708,9 +708,8 @@ static inline bool init_shmem_thread(uint32_t pitch, uint32_t cy)
 #define ALIGN(bytes, align) (((bytes) + ((align)-1)) & ~((align)-1))
 #endif
 
-bool capture_init_shmem(struct shmem_data **data, HWND window, uint32_t base_cx,
-			uint32_t base_cy, uint32_t cx, uint32_t cy,
-			uint32_t pitch, uint32_t format, bool flip)
+bool capture_init_shmem(struct shmem_data **data, HWND window, uint32_t cx,
+			uint32_t cy, uint32_t pitch, uint32_t format, bool flip)
 {
 	uint32_t tex_size = cy * pitch;
 	uint32_t aligned_header = ALIGN(sizeof(struct shmem_data), 32);
@@ -749,8 +748,8 @@ bool capture_init_shmem(struct shmem_data **data, HWND window, uint32_t base_cx,
 	global_hook_info->pitch = pitch;
 	global_hook_info->cx = cx;
 	global_hook_info->cy = cy;
-	global_hook_info->base_cx = base_cx;
-	global_hook_info->base_cy = base_cy;
+	global_hook_info->UNUSED_base_cx = cx;
+	global_hook_info->UNUSED_base_cy = cy;
 
 	if (!init_shmem_thread(pitch, cy)) {
 		return false;
@@ -804,9 +803,6 @@ void capture_free(void)
 	SetEvent(signal_restart);
 	active = false;
 }
-
-BOOL init_vk_layer();
-BOOL shutdown_vk_layer();
 
 #define HOOK_NAME L"graphics_hook_dup_mutex"
 
@@ -865,11 +861,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID unused1)
 		if (!init_mutexes()) {
 			return false;
 		}
-#if COMPILE_VULKAN_HOOK
-		if (!init_vk_layer()) {
-			return false;
-		}
-#endif
+
 		/* this prevents the library from being automatically unloaded
 		 * by the next FreeLibrary call */
 		GetModuleFileNameW(hinst, name, MAX_PATH);
@@ -894,9 +886,6 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID unused1)
 			CloseHandle(capture_thread);
 		}
 
-#if COMPILE_VULKAN_HOOK
-		shutdown_vk_layer();
-#endif
 		free_hook();
 	}
 

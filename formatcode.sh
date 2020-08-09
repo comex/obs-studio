@@ -14,10 +14,8 @@ set -o nounset
 # Get CPU count
 OS=$(uname)
 NPROC=1
-if [[ $OS = "Linux" ]] ; then
-    NPROC=$(nproc)
-elif [[ ${OS} = "Darwin" ]] ; then
-    NPROC=$(sysctl -n hw.physicalcpu)
+if [[ $OS = "Linux" || $OS = "Darwin" ]] ; then
+    NPROC=$(getconf _NPROCESSORS_ONLN)
 fi
 
 # Discover clang-format
@@ -37,4 +35,4 @@ find . -type d \( -path ./deps \
 -o -path ./plugins/obs-outputs/ftl-sdk \
 -o -path ./plugins/obs-vst \
 -o -path ./build \) -prune -type f -o -name '*.h' -or -name '*.hpp' -or -name '*.m' -or -name '*.mm' -or -name '*.c' -or -name '*.cpp' \
-| xargs -I{} -P ${NPROC} ${CLANG_FORMAT} -i -style=file  -fallback-style=none {}
+| xargs -L100 -P${NPROC} ${CLANG_FORMAT} -i -style=file  -fallback-style=none

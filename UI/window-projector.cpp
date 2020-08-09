@@ -10,6 +10,8 @@
 #include "platform.hpp"
 
 static QList<OBSProjector *> multiviewProjectors;
+static QList<OBSProjector *> allProjectors;
+
 static bool updatingMultiview = false, drawLabel, drawSafeArea, mouseSwitching,
 	    transitionOnDoubleClick;
 static MultiviewLayout multiviewLayout;
@@ -24,21 +26,26 @@ OBSProjector::OBSProjector(QWidget *widget, obs_source_t *source_, int monitor,
 {
 	type = type_;
 
+	SetAlwaysOnTop(this, config_get_bool(GetGlobalConfig(), "BasicWindow",
+					     "ProjectorAlwaysOnTop"));
+
 	setWindowIcon(QIcon::fromTheme("obs", QIcon(":/res/images/obs.png")));
-	UpdateProjectorTitle(QT_UTF8(obs_source_get_name(source)));
 
 	if (monitor == -1)
 		resize(480, 270);
 	else
 		SetMonitor(monitor);
 
+	UpdateProjectorTitle(QT_UTF8(obs_source_get_name(source)));
+
 	QAction *action = new QAction(this);
 	action->setShortcut(Qt::Key_Escape);
 	addAction(action);
 	connect(action, SIGNAL(triggered()), this, SLOT(EscapeTriggered()));
 
-	SetAlwaysOnTop(this, config_get_bool(GetGlobalConfig(), "BasicWindow",
-					     "ProjectorAlwaysOnTop"));
+	isAlwaysOnTop = config_get_bool(GetGlobalConfig(), "BasicWindow",
+					"ProjectorAlwaysOnTop");
+	SetAlwaysOnTop(this, isAlwaysOnTop);
 
 	setAttribute(Qt::WA_DeleteOnClose, true);
 
@@ -56,9 +63,8 @@ OBSProjector::OBSProjector(QWidget *widget, obs_source_t *source_, int monitor,
 	};
 
 	connect(this, &OBSQTDisplay::DisplayCreated, addDrawCallback);
-
-	if (isFullScreen())
-		SetHideCursor();
+	connect(App(), &QGuiApplication::screenRemoved, this,
+		&OBSProjector::ScreenRemoved);
 
 	if (type == ProjectorType::Multiview) {
 		obs_enter_graphics();
@@ -123,6 +129,8 @@ OBSProjector::OBSProjector(QWidget *widget, obs_source_t *source_, int monitor,
 	if (source)
 		obs_source_inc_showing(source);
 
+	allProjectors.push_back(this);
+
 	ready = true;
 
 	show();
@@ -162,18 +170,24 @@ OBSProjector::~OBSProjector()
 		multiviewProjectors.removeAll(this);
 
 	App()->DecrementSleepInhibition();
+
+	screen = nullptr;
 }
 
 void OBSProjector::SetMonitor(int monitor)
 {
 	savedMonitor = monitor;
-	QScreen *screen = QGuiApplication::screens()[monitor];
-	showFullScreen();
+	screen = QGuiApplication::screens()[monitor];
 	setGeometry(screen->geometry());
+	showFullScreen();
+	SetHideCursor();
 }
 
 void OBSProjector::SetHideCursor()
 {
+	if (savedMonitor == -1)
+		return;
+
 	bool hideCursor = config_get_bool(GetGlobalConfig(), "BasicWindow",
 					  "HideProjectorCursor");
 
@@ -826,9 +840,24 @@ void OBSProjector::mousePressEvent(QMouseEvent *event)
 					       SLOT(OpenFullScreenProjector()));
 		popup.addMenu(projectorMenu);
 
-		if (GetMonitor() > -1)
+		if (GetMonitor() > -1) {
 			popup.addAction(QTStr("Windowed"), this,
 					SLOT(OpenWindowedProjector()));
+
+		} else if (!this->isMaximized()) {
+			popup.addAction(QTStr("ResizeProjectorWindowToContent"),
+					this, SLOT(ResizeToContent()));
+		}
+
+		QAction *alwaysOnTopButton =
+			new QAction(QTStr("Basic.MainMenu.AlwaysOnTop"), this);
+		alwaysOnTopButton->setCheckable(true);
+		alwaysOnTopButton->setChecked(isAlwaysOnTop);
+
+		connect(alwaysOnTopButton, &QAction::toggled, this,
+			&OBSProjector::AlwaysOnTopToggled);
+
+		popup.addAction(alwaysOnTopButton);
 
 		popup.addAction(QTStr("Close"), this, SLOT(EscapeTriggered()));
 		popup.exec(QCursor::pos());
@@ -855,6 +884,8 @@ void OBSProjector::EscapeTriggered()
 {
 	OBSBasic *main = reinterpret_cast<OBSBasic *>(App()->GetMainWindow());
 	main->DeleteProjector(this);
+
+	allProjectors.removeAll(this);
 }
 
 void OBSProjector::UpdateMultiview()
@@ -979,7 +1010,7 @@ void OBSProjector::UpdateProjectorTitle(QString name)
 		if (!window)
 			title = QTStr("MultiviewProjector");
 		else
-			title = QTStr("MultiviewWindow");
+			title = QTStr("MultiviewWindowed");
 		break;
 	default:
 		title = name;
@@ -1033,7 +1064,6 @@ void OBSProjector::OpenFullScreenProjector()
 
 	int monitor = sender()->property("monitor").toInt();
 	SetMonitor(monitor);
-	SetHideCursor();
 
 	UpdateProjectorTitle(QT_UTF8(obs_source_get_name(source)));
 }
@@ -1052,10 +1082,70 @@ void OBSProjector::OpenWindowedProjector()
 	savedMonitor = -1;
 
 	UpdateProjectorTitle(QT_UTF8(obs_source_get_name(source)));
+	screen = nullptr;
+}
+
+void OBSProjector::ResizeToContent()
+{
+	OBSSource source = GetSource();
+	uint32_t targetCX;
+	uint32_t targetCY;
+	int x, y, newX, newY;
+	float scale;
+
+	if (source) {
+		targetCX = std::max(obs_source_get_width(source), 1u);
+		targetCY = std::max(obs_source_get_height(source), 1u);
+	} else {
+		struct obs_video_info ovi;
+		obs_get_video_info(&ovi);
+		targetCX = ovi.base_width;
+		targetCY = ovi.base_height;
+	}
+
+	QSize size = this->size();
+	GetScaleAndCenterPos(targetCX, targetCY, size.width(), size.height(), x,
+			     y, scale);
+
+	newX = size.width() - (x * 2);
+	newY = size.height() - (y * 2);
+	resize(newX, newY);
+}
+
+void OBSProjector::AlwaysOnTopToggled(bool isAlwaysOnTop)
+{
+	SetIsAlwaysOnTop(isAlwaysOnTop, true);
 }
 
 void OBSProjector::closeEvent(QCloseEvent *event)
 {
 	EscapeTriggered();
 	event->accept();
+}
+
+bool OBSProjector::IsAlwaysOnTop() const
+{
+	return isAlwaysOnTop;
+}
+
+bool OBSProjector::IsAlwaysOnTopOverridden() const
+{
+	return isAlwaysOnTopOverridden;
+}
+
+void OBSProjector::SetIsAlwaysOnTop(bool isAlwaysOnTop, bool isOverridden)
+{
+	this->isAlwaysOnTop = isAlwaysOnTop;
+	this->isAlwaysOnTopOverridden = isOverridden;
+
+	SetAlwaysOnTop(this, isAlwaysOnTop);
+}
+
+void OBSProjector::ScreenRemoved(QScreen *screen_)
+{
+	if (GetMonitor() < 0 || !screen)
+		return;
+
+	if (screen == screen_)
+		EscapeTriggered();
 }

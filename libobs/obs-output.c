@@ -17,6 +17,7 @@
 
 #include <inttypes.h>
 #include "util/platform.h"
+#include "util/util_uint64.h"
 #include "obs.h"
 #include "obs-internal.h"
 
@@ -1731,8 +1732,8 @@ static bool prepare_audio(struct obs_output *output,
 	*new = *old;
 
 	if (old->timestamp < output->video_start_ts) {
-		uint64_t duration = (uint64_t)old->frames * 1000000000 /
-				    (uint64_t)output->sample_rate;
+		uint64_t duration = util_mul_div64(old->frames, 1000000000ULL,
+						   output->sample_rate);
 		uint64_t end_ts = (old->timestamp + duration);
 		uint64_t cutoff;
 
@@ -1742,7 +1743,8 @@ static bool prepare_audio(struct obs_output *output,
 		cutoff = output->video_start_ts - old->timestamp;
 		new->timestamp += cutoff;
 
-		cutoff = cutoff * (uint64_t)output->sample_rate / 1000000000;
+		cutoff = util_mul_div64(cutoff, output->sample_rate,
+					1000000000ULL);
 
 		for (size_t i = 0; i < output->planes; i++)
 			new->data[i] += output->audio_size *(uint32_t)cutoff;
@@ -1979,6 +1981,9 @@ static inline bool initialize_audio_encoders(obs_output_t *output,
 {
 	for (size_t i = 0; i < num_mixes; i++) {
 		if (!obs_encoder_initialize(output->audio_encoders[i])) {
+			obs_output_set_last_error(
+				output, obs_encoder_get_last_error(
+						output->audio_encoders[i]));
 			return false;
 		}
 	}
@@ -2038,8 +2043,12 @@ bool obs_output_initialize_encoders(obs_output_t *output, uint32_t flags)
 
 	if (!encoded)
 		return false;
-	if (has_video && !obs_encoder_initialize(output->video_encoder))
+	if (has_video && !obs_encoder_initialize(output->video_encoder)) {
+		obs_output_set_last_error(
+			output,
+			obs_encoder_get_last_error(output->video_encoder));
 		return false;
+	}
 	if (has_audio && !initialize_audio_encoders(output, num_mixes))
 		return false;
 

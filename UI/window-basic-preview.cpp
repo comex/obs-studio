@@ -495,13 +495,15 @@ void OBSBasicPreview::keyReleaseEvent(QKeyEvent *event)
 
 void OBSBasicPreview::wheelEvent(QWheelEvent *event)
 {
-	if (scrollMode && IsFixedScaling() &&
-	    event->orientation() == Qt::Vertical) {
-		if (event->delta() > 0)
-			SetScalingLevel(scalingLevel + 1);
-		else if (event->delta() < 0)
-			SetScalingLevel(scalingLevel - 1);
-		emit DisplayResized();
+	if (scrollMode && IsFixedScaling()) {
+		const int delta = event->angleDelta().y();
+		if (delta != 0) {
+			if (delta > 0)
+				SetScalingLevel(scalingLevel + 1);
+			else
+				SetScalingLevel(scalingLevel - 1);
+			emit DisplayResized();
+		}
 	}
 
 	OBSQTDisplay::wheelEvent(event);
@@ -1514,10 +1516,9 @@ static void DrawLine(float x1, float y1, float x2, float y2, float thickness,
 	gs_vertex2f(x1, y1);
 	gs_vertex2f(x1 + (xSide * (thickness / scale.x)),
 		    y1 + (ySide * (thickness / scale.y)));
+	gs_vertex2f(x2, y2);
 	gs_vertex2f(x2 + (xSide * (thickness / scale.x)),
 		    y2 + (ySide * (thickness / scale.y)));
-	gs_vertex2f(x2, y2);
-	gs_vertex2f(x1, y1);
 
 	gs_vertbuffer_t *line = gs_render_save();
 
@@ -1532,24 +1533,17 @@ static void DrawRect(float thickness, vec2 scale)
 
 	gs_vertex2f(0.0f, 0.0f);
 	gs_vertex2f(0.0f + (thickness / scale.x), 0.0f);
+	gs_vertex2f(0.0f, 1.0f);
 	gs_vertex2f(0.0f + (thickness / scale.x), 1.0f);
-	gs_vertex2f(0.0f, 1.0f);
-	gs_vertex2f(0.0f, 0.0f);
-	gs_vertex2f(0.0f, 1.0f);
 	gs_vertex2f(0.0f, 1.0f - (thickness / scale.y));
+	gs_vertex2f(1.0f, 1.0f);
 	gs_vertex2f(1.0f, 1.0f - (thickness / scale.y));
-	gs_vertex2f(1.0f, 1.0f);
-	gs_vertex2f(0.0f, 1.0f);
-	gs_vertex2f(1.0f, 1.0f);
 	gs_vertex2f(1.0f - (thickness / scale.x), 1.0f);
+	gs_vertex2f(1.0f, 0.0f);
 	gs_vertex2f(1.0f - (thickness / scale.x), 0.0f);
-	gs_vertex2f(1.0f, 0.0f);
-	gs_vertex2f(1.0f, 1.0f);
-	gs_vertex2f(1.0f, 0.0f);
 	gs_vertex2f(1.0f, 0.0f + (thickness / scale.y));
-	gs_vertex2f(0.0f, 0.0f + (thickness / scale.y));
 	gs_vertex2f(0.0f, 0.0f);
-	gs_vertex2f(1.0f, 0.0f);
+	gs_vertex2f(0.0f, 0.0f + (thickness / scale.y));
 
 	gs_vertbuffer_t *rect = gs_render_save();
 
@@ -1897,10 +1891,8 @@ void OBSBasicPreview::DrawSceneEditing()
 
 			gs_vertex2f(0.0f, 0.0f);
 			gs_vertex2f(1.0f, 0.0f);
-			gs_vertex2f(1.0f, 1.0f);
-			gs_vertex2f(1.0f, 1.0f);
-			gs_vertex2f(0.0f, 0.0f);
 			gs_vertex2f(0.0f, 1.0f);
+			gs_vertex2f(1.0f, 1.0f);
 
 			rectFill = gs_render_save();
 		}

@@ -8,6 +8,7 @@
 #include <util/windows/WinHandle.hpp>
 #include <util/windows/CoTaskMemPtr.hpp>
 #include <util/threading.h>
+#include <util/util_uint64.h>
 
 using namespace std;
 
@@ -319,11 +320,15 @@ void WASAPISource::Initialize()
 		resSample =
 			store->GetValue(PKEY_AudioEngine_DeviceFormat, &prop);
 		if (!FAILED(resSample)) {
-			deviceFormatProperties =
-				(PWAVEFORMATEX)prop.blob.pBlobData;
-			device_sample = std::to_string(
-				deviceFormatProperties->nSamplesPerSec);
+			if (prop.vt != VT_EMPTY && prop.blob.pBlobData) {
+				deviceFormatProperties =
+					(PWAVEFORMATEX)prop.blob.pBlobData;
+				device_sample = std::to_string(
+					deviceFormatProperties->nSamplesPerSec);
+			}
 		}
+
+		store->Release();
 	}
 
 	InitClient();
@@ -460,8 +465,8 @@ bool WASAPISource::ProcessCaptureData()
 		data.timestamp = useDeviceTiming ? ts * 100 : os_gettime_ns();
 
 		if (!useDeviceTiming)
-			data.timestamp -= (uint64_t)frames * 1000000000ULL /
-					  (uint64_t)sampleRate;
+			data.timestamp -= util_mul_div64(frames, 1000000000ULL,
+							 sampleRate);
 
 		obs_source_output_audio(source, &data);
 

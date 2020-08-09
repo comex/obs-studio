@@ -6,15 +6,13 @@ variables:
   CEF_VERSION: 75.1.16+g16a67c4+chromium-75.0.3770.100
   TWITCH-CLIENTID: $(twitch_clientid)
   TWITCH-HASH: $(twitch_hash)
-  MIXER-CLIENTID: $(mixer_clientid)
-  MIXER-HASH: $(mixer_hash)
   RESTREAM-CLIENTID: $(restream_clientid)
   RESTREAM-HASH: $(restream_hash)
 
 jobs:
 - job: Prebuild
   pool:
-    vmImage: 'ubuntu-16.04'
+    vmImage: 'ubuntu-18.04'
   steps:
   - bash: |
      if curl -s "https://api.github.com/repos/$BUILD_REPOSITORY_ID/issues/$SYSTEM_PULLREQUEST_PULLREQUESTNUMBER/labels" | grep '"name": "Seeking Testers"'
@@ -55,7 +53,7 @@ jobs:
     condition: or(ne(variables['Build.Reason'], 'PullRequest'), eq(variables['prHasCILabel'], true))
     inputs:
       pathtoPublish: './nightly'
-      artifactName: build
+      artifactName: macbuild
 
 - job: 'Build_Windows32'
   dependsOn: Prebuild
@@ -116,7 +114,7 @@ jobs:
   variables:
     prHasCILabel: $[ dependencies.Prebuild.outputs['checkPrLabel.prHasCILabel'] ]
   pool:
-    vmImage: 'ubuntu-16.04'
+    vmImage: 'ubuntu-18.04'
   steps:
   - script: git submodule update --init --recursive
     displayName: 'Checkout Submodules'
